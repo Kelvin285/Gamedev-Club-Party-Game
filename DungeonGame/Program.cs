@@ -1,3 +1,4 @@
-﻿
-using var game = new DungeonGame.Game1();
+﻿using System;
+
+using var game = new DungeonGame.Game();
 game.Run();
