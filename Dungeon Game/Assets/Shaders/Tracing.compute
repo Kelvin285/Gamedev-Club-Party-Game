@@ -1,0 +1,127 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+Texture2D<float4> Color;
+Texture2D<float4> Normal;
+Texture2D<float4> Height;
+RWTexture2D<float4> Result;
+
+float Time;
+
+//https://www.shadertoy.com/view/fdS3zw
+
+#define M_PI 3.141592
+
+float hash1(inout float seed)
+{
+    return frac(sin(seed += 0.1) * 43758.5453123);
+}
+
+float2 hash2(inout float seed)
+{
+    return frac(sin(float2(seed += 0.1, seed += 0.1)) * float2(43758.5453123, 22578.1459123));
+}
+
+float3 cosineSampleHemisphere(float3 n, inout float seed)
+{
+    float2 u = hash2(seed);
+
+    float r = sqrt(u.x);
+    float theta = 2.0 * M_PI * u.y;
+ 
+    float3 B = normalize(cross(n, float3(0.0, 1.0, 1.0)));
+    float3 T = cross(B, n);
+    
+    return normalize(r * sin(theta) * B + sqrt(1.0 - u.x) * n + r * cos(theta) * T);
+}
+
+float GetHeight(uint2 id)
+{
+    float p_val = 1.0f;
+    return (1.0f - pow(1.0f - Height[id.xy], float4(p_val, p_val, p_val, p_val))).x * 128.0f;
+}
+
+uint2 GetPixel(float3 pos)
+{
+    pos *= 16.0f;
+    return uint2((uint) pos.x, (uint) pos.z);
+}
+
+bool Trace(float3 pos, float3 dir)
+{
+    pos += dir * 0.1f;
+    for (int i = 0; i < 256; i++)
+    {
+        
+        if (pos.x < 0 || pos.z < 0 || pos.x >= 1920 / 16.0f || pos.z >= 1080 / 16.0f)
+        {
+            break;
+        }
+        
+        uint2 pixel = GetPixel(pos);
+        
+        if (Normal[pixel].w == 0)
+            break;
+        
+        if (pos.y < GetHeight(pixel))
+        {
+            return true;
+        }
+        
+        pos += dir * 0.1f;
+    }
+    return false;
+}
+
+[numthreads(8,4,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+    
+    
+    if (Normal[id.xy].w > 0)
+    {
+        float3 pos = float3(id.x / 16.0f, GetHeight(id.xy) + 0.1f, id.y / 16.0f);
+    
+        float3 normal = normalize(Normal[id.xy].xyz - 0.5f);
+        
+        //pos.y += 20;
+        
+        float time_seed = Time;
+        
+        float seed = (float) (id.x + id.y * 1080);
+        
+        
+        seed = hash1(seed) + hash1(time_seed);
+        
+        float3 dir = cosineSampleHemisphere(normal, seed);
+        
+        bool trace = Trace(pos, dir);
+        
+        float4 out_color = Color[id.xy];
+        
+        if (trace)
+        {
+            out_color.xyz *= 0.1f;
+        }
+        
+        bool shadow = Trace(pos, normalize(lerp(dir, float3(1, 1, 1), 0.75f)));
+        
+        if (shadow)
+        {
+            out_color.xyz *= 0.5f;
+        }
+        
+            float4 last = Result[id.xy];
+        
+        Result[id.xy] = lerp(last, out_color, 0.05f);
+
+    }
+    else
+    {
+        Result[id.xy] = float4(0, 0, 0, 1);
+
+    }
+}
